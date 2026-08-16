@@ -140,9 +140,7 @@ async def _ensure_schema() -> None:
     )
     await _connection.commit()
 
-    cursor = await _connection.execute(
-        "SELECT version FROM schema_meta WHERE id = 1"
-    )
+    cursor = await _connection.execute("SELECT version FROM schema_meta WHERE id = 1")
     row = await cursor.fetchone()
     current = int(row["version"]) if row is not None else 0
 
@@ -279,7 +277,9 @@ async def load_all_participants() -> dict[int, dict[int, dict]]:
     return loaded
 
 
-async def load_chat_state() -> tuple[dict[str, dict[int, int]], dict[str, dict[int, str]]]:
+async def load_chat_state() -> tuple[
+    dict[str, dict[int, int]], dict[str, dict[int, str]]
+]:
     cursor = await _connection.execute(
         "SELECT chat_id, bot_kind, last_choose_at, chosen_pidor FROM chat_state"
     )

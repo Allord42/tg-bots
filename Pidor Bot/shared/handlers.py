@@ -92,7 +92,9 @@ async def cmd_username_account(message: Message) -> None:
         text = user_account(
             user_id=target_id,
             player=player,
-            tg_username=tg_user.username if tg_user.username else str(player.get("tg_username", "")),
+            tg_username=tg_user.username
+            if tg_user.username
+            else str(player.get("tg_username", "")),
             full_name=tg_user.full_name,
             is_premium=bool(tg_user.is_premium),
         )

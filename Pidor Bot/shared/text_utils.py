@@ -112,7 +112,9 @@ def user_account(
     else:
         lines.append("вступил: —")
 
-    birthday_text = format_birthday(int(player.get("birthday_date", 0))) if player else ""
+    birthday_text = (
+        format_birthday(int(player.get("birthday_date", 0))) if player else ""
+    )
     if birthday_text:
         lines.append(f"день рождения: {birthday_text}")
     else:

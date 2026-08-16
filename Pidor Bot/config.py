@@ -83,7 +83,9 @@ def command_menu(
 START_MESSAGE = "Пидорасня тебя ждет. Скорее вступай в наше лудоприключение :)\n"
 COMMANDS_HELP = "Список доступных команд: /commands"
 START_MESSAGE_CLASSIC = START_MESSAGE + "Это классический бот.\n"
-START_MESSAGE_EXTENDED = START_MESSAGE + "Это расширенный бот. Счёт и choose отдельные.\n"
+START_MESSAGE_EXTENDED = (
+    START_MESSAGE + "Это расширенный бот. Счёт и choose отдельные.\n"
+)
 CHOOSE_PIDOR_MESSAGE = [
     "Настраиваю свои алгоритмы...",
     "Считаю число пи...",
@@ -113,9 +115,5 @@ BIRTHDAY_SAVED_MESSAGE = "День рождения сохранён: {date}"
 
 LEADERBOARD_EMPTY_MESSAGE = "Таблица пуста. Сначала /join"
 WAITING_JOIN_NAME_MESSAGE = "Как боту к вам обращаться?"
-WAITING_RENAME_TARGET_MESSAGE = (
-    "Кого переименовать? Напиши текущее имя участника"
-)
-WAITING_RENAME_NAME_MESSAGE = (
-    "Какое будет новое имя?"
-)
+WAITING_RENAME_TARGET_MESSAGE = "Кого переименовать? Напиши текущее имя участника"
+WAITING_RENAME_NAME_MESSAGE = "Какое будет новое имя?"
