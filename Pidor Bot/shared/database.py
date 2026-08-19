@@ -177,7 +177,15 @@ async def _execute(
     sql: str,
     params: tuple,
 ) -> Any:
-    return await _connection.execute(_sql(sql), params)
+    converted = _sql(sql)
+    try:
+        if params:
+            return await _connection.execute(converted, params)
+        return await _connection.execute(converted)
+    except Exception:
+        if _backend == BACKEND_POSTGRES:
+            await _connection.rollback()
+        raise
 
 
 async def _executescript(
@@ -224,6 +232,7 @@ async def init_db() -> None:
         _connection = await psycopg.AsyncConnection.connect(
             postgres_dsn(DATABASE_URL),
             row_factory=dict_row,
+            autocommit=True,
         )
         await _ensure_postgres_schema()
         logger.info("Postgres ready (schema v%s)", SCHEMA_VERSION)
