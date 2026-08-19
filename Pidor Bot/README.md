@@ -24,7 +24,11 @@ This is the bot that will grow: player vs player, casino-style games, betting ag
 
 ## Setup
 
-Python 3.14+. From the workspace root (`Telegram bots`), install deps with `uv`. You also need `aiogram` and `aiosqlite` available in that environment.
+Python 3.14+. From the workspace root (`Telegram bots`), install with `uv`:
+
+```bash
+uv sync
+```
 
 Create `Pidor Bot/.env` with BotFather tokens:
 
@@ -45,9 +49,20 @@ python main_classic.py
 
 # extended bot (separate score; extra games go here)
 python main_extended.py
+
+# both bots in one process (same as Heroku)
+python main_both.py
 ```
 
-Run them in two terminals if you need both at once. SQLite is at `db/pidor.db`; logs go to `db/bot.log`.
+Run classic and extended in two terminals if you want them as separate processes. Local SQLite is at `db/pidor.db`; logs go to `db/bot.log`.
+
+## Heroku
+
+One app, one `web` dyno, both bots in `main_both.py`. Procfile lives in the git root (`Telegram bots/`). Heroku reads `pyproject.toml` + `uv.lock` (no `requirements.txt`).
+
+SQLite on Heroku is wiped on every dyno restart. Attach Postgres and Heroku will set `DATABASE_URL`. Locally, leave `DATABASE_URL` unset to keep using `db/pidor.db`.
+
+Config vars: `PIDOR_BOT_TOKEN`, `PIDOR_BOT_EXTENDED_TOKEN`. `DATABASE_URL` comes from the Postgres addon.
 
 ## Commands
 
@@ -68,7 +83,8 @@ Extended only: `/choose_pidor_ex`, `/leaderboard_ex`
 ## Data
 
 - `.env` — tokens, never commit
-- `db/pidor.db` — participants and per-bot chat state, never commit
+- `db/pidor.db` — local SQLite (participants and per-bot chat state), never commit
+- Heroku Postgres — same data when `DATABASE_URL` is set
 - `config.py` — `ADMIN_IDS`, cooldowns, Russian player-facing copy
 
 ## Roadmap (extended)

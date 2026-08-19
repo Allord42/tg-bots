@@ -12,6 +12,7 @@ load_dotenv(BASE_DIR / ".env")
 
 PIDOR_BOT_TOKEN = os.getenv("PIDOR_BOT_TOKEN", "")
 PIDOR_BOT_EXTENDED_TOKEN = os.getenv("PIDOR_BOT_EXTENDED_TOKEN", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 BOT_KIND_CLASSIC = "classic"
 BOT_KIND_EXTENDED = "extended"
@@ -25,7 +26,6 @@ CHOOSE_STARTS_FIELD = {
     BOT_KIND_EXTENDED: "choose_starts_extended",
 }
 
-# Telegram user_id админов (только они могут /rename)
 ADMIN_IDS = [
     953469867,
 ]

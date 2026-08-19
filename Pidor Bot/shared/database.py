@@ -1,11 +1,16 @@
+import asyncio
 import logging
+from typing import Any
 
 import aiosqlite
+import psycopg
+from psycopg.rows import dict_row
 
 from config import (
     BOT_KIND_CLASSIC,
     BOT_KIND_EXTENDED,
     CHOOSE_STARTS_FIELD,
+    DATABASE_URL,
     DB_DIR,
     DB_PATH,
     SCORE_FIELD,
@@ -14,6 +19,8 @@ from config import (
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 5
+BACKEND_SQLITE = "sqlite"
+BACKEND_POSTGRES = "postgres"
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -105,31 +112,142 @@ MIGRATIONS: dict[int, str] = {
         """,
 }
 
-_connection: aiosqlite.Connection
+POSTGRES_SCHEMA = """
+        CREATE TABLE IF NOT EXISTS schema_meta (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            version INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS participants (
+            chat_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            display_name TEXT NOT NULL,
+            tg_username TEXT NOT NULL DEFAULT '',
+            birthday_date INTEGER NOT NULL DEFAULT 0,
+            time_joined BIGINT NOT NULL,
+            pidor_score INTEGER NOT NULL DEFAULT 0,
+            extended_score INTEGER NOT NULL DEFAULT 0,
+            choose_starts_classic INTEGER NOT NULL DEFAULT 0,
+            choose_starts_extended INTEGER NOT NULL DEFAULT 0,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (chat_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS chat_state (
+            chat_id BIGINT NOT NULL,
+            bot_kind TEXT NOT NULL,
+            last_choose_at BIGINT NOT NULL DEFAULT 0,
+            chosen_pidor TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (chat_id, bot_kind)
+        );
+        """
+
+POSTGRES_MIGRATIONS: dict[int, str] = {}
+
+_backend: str = BACKEND_SQLITE
+_connection: Any
+_lock = asyncio.Lock()
+
+
+def postgres_dsn(
+    raw: str,
+) -> str:
+    dsn = raw
+    if dsn.startswith("postgres://"):
+        dsn = "postgresql://" + dsn[len("postgres://") :]
+    if "sslmode=" not in dsn:
+        separator = "&" if "?" in dsn else "?"
+        dsn = dsn + separator + "sslmode=require"
+    return dsn
+
+
+def _sql(
+    sql: str,
+) -> str:
+    if _backend != BACKEND_POSTGRES:
+        return sql
+    converted: list[str] = []
+    for char in sql:
+        if char == "?":
+            converted.append("%s")
+        else:
+            converted.append(char)
+    return "".join(converted)
+
+
+async def _execute(
+    sql: str,
+    params: tuple,
+) -> Any:
+    return await _connection.execute(_sql(sql), params)
+
+
+async def _executescript(
+    script: str,
+) -> None:
+    if _backend == BACKEND_SQLITE:
+        await _connection.executescript(script)
+        return
+    for raw in script.split(";"):
+        statement = raw.strip()
+        if statement:
+            await _connection.execute(statement)
+
+
+async def _commit() -> None:
+    await _connection.commit()
+
+
+async def _schema_version() -> int:
+    cursor = await _execute("SELECT version FROM schema_meta WHERE id = ?", (1,))
+    row = await cursor.fetchone()
+    if row is None:
+        return 0
+    return int(row["version"])
+
+
+async def _set_schema_version(
+    version: int,
+) -> None:
+    await _execute(
+        """
+        INSERT INTO schema_meta (id, version) VALUES (?, ?)
+        ON CONFLICT(id) DO UPDATE SET version = excluded.version
+        """,
+        (1, version),
+    )
+    await _commit()
 
 
 async def init_db() -> None:
-    global _connection
+    global _backend, _connection
+    if DATABASE_URL:
+        _backend = BACKEND_POSTGRES
+        _connection = await psycopg.AsyncConnection.connect(
+            postgres_dsn(DATABASE_URL),
+            row_factory=dict_row,
+        )
+        await _ensure_postgres_schema()
+        logger.info("Postgres ready (schema v%s)", SCHEMA_VERSION)
+        return
+    _backend = BACKEND_SQLITE
     DB_DIR.mkdir(parents=True, exist_ok=True)
     _connection = await aiosqlite.connect(DB_PATH)
     _connection.row_factory = aiosqlite.Row
     await _connection.execute("PRAGMA foreign_keys = ON")
     await _connection.execute("PRAGMA journal_mode=WAL")
     await _connection.execute("PRAGMA busy_timeout=5000")
-    await _ensure_schema()
+    await _ensure_sqlite_schema()
     logger.info("SQLite ready -> %s (schema v%s)", DB_PATH, SCHEMA_VERSION)
 
 
 async def close_db() -> None:
     await _connection.close()
+    if _backend == BACKEND_POSTGRES:
+        logger.info("Postgres closed")
+        return
     logger.info("SQLite closed")
 
 
-def get_connection() -> aiosqlite.Connection:
-    return _connection
-
-
-async def _ensure_schema() -> None:
+async def _ensure_sqlite_schema() -> None:
     await _connection.execute(
         """
         CREATE TABLE IF NOT EXISTS schema_meta (
@@ -138,24 +256,37 @@ async def _ensure_schema() -> None:
         )
         """
     )
-    await _connection.commit()
-
-    cursor = await _connection.execute("SELECT version FROM schema_meta WHERE id = 1")
-    row = await cursor.fetchone()
-    current = int(row["version"]) if row is not None else 0
-
+    await _commit()
+    current = await _schema_version()
     for version in sorted(MIGRATIONS.keys()):
         if version <= current:
             continue
-        await _connection.executescript(MIGRATIONS[version])
-        await _connection.execute(
-            """
-            INSERT INTO schema_meta (id, version) VALUES (1, ?)
-            ON CONFLICT(id) DO UPDATE SET version = excluded.version
-            """,
-            (version,),
+        await _executescript(MIGRATIONS[version])
+        await _set_schema_version(version)
+        logger.info("Applied DB migration v%s", version)
+
+
+async def _ensure_postgres_schema() -> None:
+    await _executescript(
+        """
+        CREATE TABLE IF NOT EXISTS schema_meta (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            version INTEGER NOT NULL
         )
-        await _connection.commit()
+        """
+    )
+    await _commit()
+    current = await _schema_version()
+    if current == 0:
+        await _executescript(POSTGRES_SCHEMA)
+        await _set_schema_version(SCHEMA_VERSION)
+        logger.info("Applied Postgres schema v%s", SCHEMA_VERSION)
+        return
+    for version in sorted(POSTGRES_MIGRATIONS.keys()):
+        if version <= current:
+            continue
+        await _executescript(POSTGRES_MIGRATIONS[version])
+        await _set_schema_version(version)
         logger.info("Applied DB migration v%s", version)
 
 
@@ -167,18 +298,19 @@ async def add_participant(
     time_joined: int,
     is_admin: int,
 ) -> None:
-    await _connection.execute(
-        """
-        INSERT INTO participants (
-            chat_id, user_id, display_name, tg_username, birthday_date,
-            time_joined, pidor_score, extended_score,
-            choose_starts_classic, choose_starts_extended, is_admin
+    async with _lock:
+        await _execute(
+            """
+            INSERT INTO participants (
+                chat_id, user_id, display_name, tg_username, birthday_date,
+                time_joined, pidor_score, extended_score,
+                choose_starts_classic, choose_starts_extended, is_admin
+            )
+            VALUES (?, ?, ?, ?, 0, ?, 0, 0, 0, 0, ?)
+            """,
+            (chat_id, user_id, display_name, tg_username, time_joined, is_admin),
         )
-        VALUES (?, ?, ?, ?, 0, ?, 0, 0, 0, 0, ?)
-        """,
-        (chat_id, user_id, display_name, tg_username, time_joined, is_admin),
-    )
-    await _connection.commit()
+        await _commit()
 
 
 async def update_display_name(
@@ -186,15 +318,16 @@ async def update_display_name(
     user_id: int,
     display_name: str,
 ) -> None:
-    await _connection.execute(
-        """
-        UPDATE participants
-        SET display_name = ?
-        WHERE chat_id = ? AND user_id = ?
-        """,
-        (display_name, chat_id, user_id),
-    )
-    await _connection.commit()
+    async with _lock:
+        await _execute(
+            """
+            UPDATE participants
+            SET display_name = ?
+            WHERE chat_id = ? AND user_id = ?
+            """,
+            (display_name, chat_id, user_id),
+        )
+        await _commit()
 
 
 async def update_birthday_date(
@@ -202,15 +335,16 @@ async def update_birthday_date(
     user_id: int,
     birthday_date: int,
 ) -> None:
-    await _connection.execute(
-        """
-        UPDATE participants
-        SET birthday_date = ?
-        WHERE chat_id = ? AND user_id = ?
-        """,
-        (birthday_date, chat_id, user_id),
-    )
-    await _connection.commit()
+    async with _lock:
+        await _execute(
+            """
+            UPDATE participants
+            SET birthday_date = ?
+            WHERE chat_id = ? AND user_id = ?
+            """,
+            (birthday_date, chat_id, user_id),
+        )
+        await _commit()
 
 
 async def record_successful_choose(
@@ -225,38 +359,40 @@ async def record_successful_choose(
         raise ValueError(bot_kind)
     score_col = SCORE_FIELD[bot_kind]
     starts_col = CHOOSE_STARTS_FIELD[bot_kind]
-    await _connection.execute(
-        f"""
-        UPDATE participants
-        SET {score_col} = {score_col} + 1
-        WHERE chat_id = ? AND user_id = ?
-        """,
-        (chat_id, chosen_user_id),
-    )
-    await _connection.execute(
-        f"""
-        UPDATE participants
-        SET {starts_col} = {starts_col} + 1
-        WHERE chat_id = ? AND user_id = ?
-        """,
-        (chat_id, starter_user_id),
-    )
-    await _connection.execute(
-        """
-        INSERT INTO chat_state (chat_id, bot_kind, last_choose_at, chosen_pidor)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(chat_id, bot_kind) DO UPDATE SET
-            last_choose_at = excluded.last_choose_at,
-            chosen_pidor = excluded.chosen_pidor
-        """,
-        (chat_id, bot_kind, last_choose_at, chosen_name),
-    )
-    await _connection.commit()
+    async with _lock:
+        await _execute(
+            f"""
+            UPDATE participants
+            SET {score_col} = {score_col} + 1
+            WHERE chat_id = ? AND user_id = ?
+            """,
+            (chat_id, chosen_user_id),
+        )
+        await _execute(
+            f"""
+            UPDATE participants
+            SET {starts_col} = {starts_col} + 1
+            WHERE chat_id = ? AND user_id = ?
+            """,
+            (chat_id, starter_user_id),
+        )
+        await _execute(
+            """
+            INSERT INTO chat_state (chat_id, bot_kind, last_choose_at, chosen_pidor)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(chat_id, bot_kind) DO UPDATE SET
+                last_choose_at = excluded.last_choose_at,
+                chosen_pidor = excluded.chosen_pidor
+            """,
+            (chat_id, bot_kind, last_choose_at, chosen_name),
+        )
+        await _commit()
 
 
 async def load_all_participants() -> dict[int, dict[int, dict]]:
-    cursor = await _connection.execute("SELECT * FROM participants")
-    rows = await cursor.fetchall()
+    async with _lock:
+        cursor = await _execute("SELECT * FROM participants", ())
+        rows = await cursor.fetchall()
     loaded: dict[int, dict[int, dict]] = {}
     for row in rows:
         chat_id = int(row["chat_id"])
@@ -280,10 +416,12 @@ async def load_all_participants() -> dict[int, dict[int, dict]]:
 async def load_chat_state() -> tuple[
     dict[str, dict[int, int]], dict[str, dict[int, str]]
 ]:
-    cursor = await _connection.execute(
-        "SELECT chat_id, bot_kind, last_choose_at, chosen_pidor FROM chat_state"
-    )
-    rows = await cursor.fetchall()
+    async with _lock:
+        cursor = await _execute(
+            "SELECT chat_id, bot_kind, last_choose_at, chosen_pidor FROM chat_state",
+            (),
+        )
+        rows = await cursor.fetchall()
     choose_times: dict[str, dict[int, int]] = {
         BOT_KIND_CLASSIC: {},
         BOT_KIND_EXTENDED: {},

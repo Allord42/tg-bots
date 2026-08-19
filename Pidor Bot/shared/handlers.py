@@ -43,10 +43,6 @@ from shared.text_utils import (
     validate_name,
 )
 
-router = Router()
-
-
-@router.message(Command("start"))
 async def cmd_start(message: Message, bot_kind: str) -> None:
     log_event(message, "CMD /start")
     intro = (
@@ -57,7 +53,6 @@ async def cmd_start(message: Message, bot_kind: str) -> None:
     await message.answer(intro + COMMANDS_HELP)
 
 
-@router.message(Command("commands"))
 async def cmd_commands(message: Message, bot_kind: str) -> None:
     log_event(message, "CMD /commands")
     await message.answer(commands_list(bot_kind))
@@ -73,7 +68,6 @@ async def fetch_tg_user(message: Message, user_id: int) -> User:
         return User(id=user_id, is_bot=False, first_name="-")
 
 
-@router.message(Command("username_account"))
 async def cmd_username_account(message: Message) -> None:
     if message.from_user is None:
         return
@@ -114,7 +108,6 @@ async def cmd_username_account(message: Message) -> None:
     await message.answer(text)
 
 
-@router.message(Command("set_birthday"))
 async def cmd_set_birthday(message: Message, state: FSMContext) -> None:
     if message.from_user is None:
         return
@@ -131,7 +124,6 @@ async def cmd_set_birthday(message: Message, state: FSMContext) -> None:
     await message.answer(WAITING_BIRTHDAY_MESSAGE)
 
 
-@router.message(BirthdayForm.waiting_date, F.text)
 async def cmd_set_birthday_date(message: Message, state: FSMContext) -> None:
     if message.from_user is None:
         return
@@ -158,7 +150,6 @@ async def cmd_set_birthday_date(message: Message, state: FSMContext) -> None:
     await message.answer(BIRTHDAY_SAVED_MESSAGE.format(date=shown))
 
 
-@router.message(Command("join"))
 async def cmd_join(message: Message, state: FSMContext) -> None:
     if message.from_user is None:
         return
@@ -178,7 +169,6 @@ async def cmd_join(message: Message, state: FSMContext) -> None:
     await message.answer(WAITING_JOIN_NAME_MESSAGE)
 
 
-@router.message(NameForm.waiting_join_name, F.text)
 async def cmd_join_name(message: Message, state: FSMContext) -> None:
     if message.from_user is None:
         return
@@ -229,7 +219,6 @@ async def cmd_join_name(message: Message, state: FSMContext) -> None:
     await message.answer(f"{name} {JOIN_MESSAGE}")
 
 
-@router.message(Command("rename"))
 async def cmd_rename(message: Message, state: FSMContext) -> None:
     if message.from_user is None:
         return
@@ -251,7 +240,6 @@ async def cmd_rename(message: Message, state: FSMContext) -> None:
     await message.answer(WAITING_RENAME_TARGET_MESSAGE)
 
 
-@router.message(NameForm.waiting_rename_target, F.text)
 async def cmd_rename_target(message: Message, state: FSMContext) -> None:
     if message.from_user is None:
         return
@@ -281,7 +269,6 @@ async def cmd_rename_target(message: Message, state: FSMContext) -> None:
     await message.answer(WAITING_RENAME_NAME_MESSAGE)
 
 
-@router.message(NameForm.waiting_rename_new_name, F.text)
 async def cmd_rename_new_name(message: Message, state: FSMContext) -> None:
     if message.from_user is None:
         return
@@ -322,3 +309,20 @@ async def cmd_rename_new_name(message: Message, state: FSMContext) -> None:
         f"target_user_id={target_user_id} {old_name} -> {new_name}",
     )
     await message.answer(f"{old_name} теперь {new_name}")
+
+
+def make_shared_router() -> Router:
+    router = Router()
+    router.message.register(cmd_start, Command("start"))
+    router.message.register(cmd_commands, Command("commands"))
+    router.message.register(cmd_username_account, Command("username_account"))
+    router.message.register(cmd_set_birthday, Command("set_birthday"))
+    router.message.register(cmd_set_birthday_date, BirthdayForm.waiting_date, F.text)
+    router.message.register(cmd_join, Command("join"))
+    router.message.register(cmd_join_name, NameForm.waiting_join_name, F.text)
+    router.message.register(cmd_rename, Command("rename"))
+    router.message.register(cmd_rename_target, NameForm.waiting_rename_target, F.text)
+    router.message.register(
+        cmd_rename_new_name, NameForm.waiting_rename_new_name, F.text
+    )
+    return router
