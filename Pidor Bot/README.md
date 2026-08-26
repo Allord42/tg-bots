@@ -100,3 +100,7 @@ Ideas already in play, not built yet:
 - 21 / blackjack
 - Fun facts, weather
 - Optional LLM for chat
+
+
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Programming\Projects\Telegram bots\Pidor Bot\scripts\dump_postgres_to_local.ps1"

@@ -7,6 +7,10 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_DIR = BASE_DIR / "db"
 LOG_PATH = DB_DIR / "bot.log"
 DB_PATH = DB_DIR / "pidor.db"
+JSON_PATH = DB_DIR / "pidor.json"
+DUMP_LOG_PATH = DB_DIR / "dump.log"
+DUMP_MIN_INTERVAL_SECONDS = 24 * 60 * 60
+HEROKU_APP_NAME = "telegram-pidor-bot-classic"
 
 load_dotenv(BASE_DIR / ".env")
 
