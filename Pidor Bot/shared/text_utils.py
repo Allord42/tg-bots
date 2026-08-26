@@ -1,7 +1,9 @@
+import html
 import logging
 from datetime import datetime
 
-from aiogram.types import Message
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import Message, User
 
 from config import (
     ADMIN_IDS,
@@ -33,6 +35,30 @@ def log_event(message: Message, action: str, detail: str = "") -> None:
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+
+async def fetch_tg_user(
+    message: Message,
+    user_id: int,
+) -> User:
+    try:
+        member = await message.bot.get_chat_member(message.chat.id, user_id)
+        return member.user
+    except TelegramBadRequest:
+        if message.from_user and message.from_user.id == user_id:
+            return message.from_user
+        return User(id=user_id, is_bot=False, first_name="-")
+
+
+def choose_result_mention(
+    user_id: int,
+    display_name: str,
+    tg_username: str,
+) -> str:
+    cleaned = tg_username.strip().lstrip("@")
+    if cleaned:
+        return f"@{html.escape(cleaned)}"
+    return f'<a href="tg://user?id={user_id}">{html.escape(display_name)}</a>'
 
 
 def format_remaining(seconds: int) -> str:

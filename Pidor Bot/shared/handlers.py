@@ -1,10 +1,9 @@
 import time
 
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, User
+from aiogram.types import Message
 
 from config import (
     ALREADY_JOINED_ERROR,
@@ -35,6 +34,7 @@ from shared.memory import (
 from shared.states import BirthdayForm, NameForm
 from shared.text_utils import (
     extract_command_arg,
+    fetch_tg_user,
     format_birthday,
     is_admin,
     log_event,
@@ -56,16 +56,6 @@ async def cmd_start(message: Message, bot_kind: str) -> None:
 async def cmd_commands(message: Message, bot_kind: str) -> None:
     log_event(message, "CMD /commands")
     await message.answer(commands_list(bot_kind))
-
-
-async def fetch_tg_user(message: Message, user_id: int) -> User:
-    try:
-        member = await message.bot.get_chat_member(message.chat.id, user_id)
-        return member.user
-    except TelegramBadRequest:
-        if message.from_user and message.from_user.id == user_id:
-            return message.from_user
-        return User(id=user_id, is_bot=False, first_name="-")
 
 
 async def cmd_username_account(message: Message) -> None:

@@ -21,7 +21,12 @@ from config import (
 )
 from shared.database import record_successful_choose
 from shared.memory import last_choose_at, last_chosen_pidor, players
-from shared.text_utils import format_remaining, log_event
+from shared.text_utils import (
+    choose_result_mention,
+    fetch_tg_user,
+    format_remaining,
+    log_event,
+)
 
 
 def make_game_router(bot_kind: str) -> Router:
@@ -117,6 +122,18 @@ def make_game_router(bot_kind: str) -> Router:
             await message.answer(text)
             await asyncio.sleep(SLEEP_TIME)
 
-        await message.answer(CHOOSE_PIDOR_RESULT.format(name=chosen["name"]))
+        tg_user = await fetch_tg_user(message, chosen_id)
+        tg_username = tg_user.username if tg_user.username else str(
+            chosen.get("tg_username", "")
+        )
+        mention = choose_result_mention(
+            chosen_id,
+            str(chosen["name"]),
+            tg_username,
+        )
+        await message.answer(
+            CHOOSE_PIDOR_RESULT.format(name=mention),
+            parse_mode="HTML",
+        )
 
     return router
