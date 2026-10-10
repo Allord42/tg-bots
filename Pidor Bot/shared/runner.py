@@ -20,6 +20,7 @@ from shared.database import close_db, init_db
 from shared.handlers import make_shared_router
 from shared.memory import load_memory_from_db
 from shared.middleware import ReloadMemoryMiddleware
+from shared.nudge import run_nudge_loop
 
 
 def setup_logging() -> None:
@@ -117,10 +118,14 @@ async def run_bot(
     await init_db()
     await load_memory_from_db()
     await setup_bot_commands(bot, bot_kind)
+    stop_event = asyncio.Event()
+    nudge_task = asyncio.create_task(run_nudge_loop({bot_kind: bot}, stop_event))
     logger.info("Bot %s started, logs -> %s", bot_kind, LOG_PATH)
     try:
         await dp.start_polling(bot)
     finally:
+        stop_event.set()
+        nudge_task.cancel()
         await close_db()
         await bot.session.close()
         logger.info("Bot %s stopped", bot_kind)
@@ -172,6 +177,15 @@ async def run_both_bots(
         ),
         asyncio.create_task(
             dp_extended.start_polling(bot_extended, handle_signals=False)
+        ),
+        asyncio.create_task(
+            run_nudge_loop(
+                {
+                    BOT_KIND_CLASSIC: bot_classic,
+                    BOT_KIND_EXTENDED: bot_extended,
+                },
+                stop_event,
+            )
         ),
     ]
     if port_text:

@@ -35,6 +35,7 @@ CHAT_STATE_FIELDS = [
     "bot_kind",
     "last_choose_at",
     "chosen_pidor",
+    "last_nudge_at",
 ]
 
 
@@ -89,11 +90,15 @@ def _row_to_chat_state(
     row: object,
 ) -> dict:
     mapping = dict(row)
+    last_nudge = 0
+    if "last_nudge_at" in mapping:
+        last_nudge = int(mapping["last_nudge_at"])
     return {
         "chat_id": int(mapping["chat_id"]),
         "bot_kind": str(mapping["bot_kind"]),
         "last_choose_at": int(mapping["last_choose_at"]),
         "chosen_pidor": str(mapping["chosen_pidor"]),
+        "last_nudge_at": last_nudge,
     }
 
 
@@ -232,7 +237,8 @@ def write_postgres_snapshot(
                 VALUES ({state_placeholders})
                 ON CONFLICT (chat_id, bot_kind) DO UPDATE SET
                     last_choose_at = EXCLUDED.last_choose_at,
-                    chosen_pidor = EXCLUDED.chosen_pidor
+                    chosen_pidor = EXCLUDED.chosen_pidor,
+                    last_nudge_at = EXCLUDED.last_nudge_at
                 """,
                 _chat_state_values(row),
             )

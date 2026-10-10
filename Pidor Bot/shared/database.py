@@ -18,7 +18,7 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 BACKEND_SQLITE = "sqlite"
 BACKEND_POSTGRES = "postgres"
 
@@ -110,6 +110,9 @@ MIGRATIONS: dict[int, str] = {
         DROP TABLE chat_state;
         ALTER TABLE chat_state_new RENAME TO chat_state;
         """,
+    6: """
+        ALTER TABLE chat_state ADD COLUMN last_nudge_at INTEGER NOT NULL DEFAULT 0;
+        """,
 }
 
 POSTGRES_SCHEMA = """
@@ -136,11 +139,16 @@ POSTGRES_SCHEMA = """
             bot_kind TEXT NOT NULL,
             last_choose_at BIGINT NOT NULL DEFAULT 0,
             chosen_pidor TEXT NOT NULL DEFAULT '',
+            last_nudge_at BIGINT NOT NULL DEFAULT 0,
             PRIMARY KEY (chat_id, bot_kind)
         );
         """
 
-POSTGRES_MIGRATIONS: dict[int, str] = {}
+POSTGRES_MIGRATIONS: dict[int, str] = {
+    6: """
+        ALTER TABLE chat_state ADD COLUMN last_nudge_at BIGINT NOT NULL DEFAULT 0;
+        """,
+}
 
 _backend: str = BACKEND_SQLITE
 _connection: Any
@@ -387,13 +395,32 @@ async def record_successful_choose(
         )
         await _execute(
             """
-            INSERT INTO chat_state (chat_id, bot_kind, last_choose_at, chosen_pidor)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO chat_state (
+                chat_id, bot_kind, last_choose_at, chosen_pidor, last_nudge_at
+            )
+            VALUES (?, ?, ?, ?, 0)
             ON CONFLICT(chat_id, bot_kind) DO UPDATE SET
                 last_choose_at = excluded.last_choose_at,
                 chosen_pidor = excluded.chosen_pidor
             """,
             (chat_id, bot_kind, last_choose_at, chosen_name),
+        )
+        await _commit()
+
+
+async def update_last_nudge(
+    chat_id: int,
+    bot_kind: str,
+    last_nudge_at: int,
+) -> None:
+    async with _lock:
+        await _execute(
+            """
+            UPDATE chat_state
+            SET last_nudge_at = ?
+            WHERE chat_id = ? AND bot_kind = ?
+            """,
+            (last_nudge_at, chat_id, bot_kind),
         )
         await _commit()
 
@@ -423,11 +450,16 @@ async def load_all_participants() -> dict[int, dict[int, dict]]:
 
 
 async def load_chat_state() -> tuple[
-    dict[str, dict[int, int]], dict[str, dict[int, str]]
+    dict[str, dict[int, int]],
+    dict[str, dict[int, str]],
+    dict[str, dict[int, int]],
 ]:
     async with _lock:
         cursor = await _execute(
-            "SELECT chat_id, bot_kind, last_choose_at, chosen_pidor FROM chat_state",
+            """
+            SELECT chat_id, bot_kind, last_choose_at, chosen_pidor, last_nudge_at
+            FROM chat_state
+            """,
             (),
         )
         rows = await cursor.fetchall()
@@ -439,12 +471,18 @@ async def load_chat_state() -> tuple[
         BOT_KIND_CLASSIC: {},
         BOT_KIND_EXTENDED: {},
     }
+    nudge_times: dict[str, dict[int, int]] = {
+        BOT_KIND_CLASSIC: {},
+        BOT_KIND_EXTENDED: {},
+    }
     for row in rows:
         kind = str(row["bot_kind"])
         chat_id = int(row["chat_id"])
         if kind not in choose_times:
             choose_times[kind] = {}
             chosen_names[kind] = {}
+            nudge_times[kind] = {}
         choose_times[kind][chat_id] = int(row["last_choose_at"])
         chosen_names[kind][chat_id] = str(row["chosen_pidor"])
-    return choose_times, chosen_names
+        nudge_times[kind][chat_id] = int(row["last_nudge_at"])
+    return choose_times, chosen_names, nudge_times

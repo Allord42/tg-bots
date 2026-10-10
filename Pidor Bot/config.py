@@ -35,6 +35,8 @@ ADMIN_IDS = [
 ]
 
 COOLDOWN_SECONDS = 10 * 60 * 60  # 10 hours
+NUDGE_AFTER_SECONDS = 24 * 60 * 60
+NUDGE_CHECK_SECONDS = 30 * 60
 SLEEP_TIME = 2  # seconds between choose phrases
 
 CMD_SUFFIX = {
@@ -99,6 +101,7 @@ CHOOSE_PIDOR_MESSAGE = [
     "99.99%...",
 ]
 CHOOSE_PIDOR_RESULT = "Очевидно, пидор дня - {name}"
+NUDGE_MESSAGE = "ну чё черепахи ленивые хули не запускаете меня"
 
 JOIN_MESSAGE = "вступил, красавчик!"
 

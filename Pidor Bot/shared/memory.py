@@ -7,17 +7,20 @@ logger = logging.getLogger(__name__)
 players: dict[int, dict[int, dict]] = {}
 last_choose_at: dict[str, dict[int, int]] = {}
 last_chosen_pidor: dict[str, dict[int, str]] = {}
+last_nudge_at: dict[str, dict[int, int]] = {}
 
 
 async def load_memory_from_db() -> None:
     loaded_players = await load_all_participants()
-    loaded_times, loaded_names = await load_chat_state()
+    loaded_times, loaded_names, loaded_nudges = await load_chat_state()
     players.clear()
     players.update(loaded_players)
     last_choose_at.clear()
     last_choose_at.update(loaded_times)
     last_chosen_pidor.clear()
     last_chosen_pidor.update(loaded_names)
+    last_nudge_at.clear()
+    last_nudge_at.update(loaded_nudges)
     logger.info(
         "Loaded from SQLite: chats=%s players=%s",
         len(players),
